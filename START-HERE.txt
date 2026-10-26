@@ -1,0 +1,31 @@
+Vibe96 — Next.js + PostgreSQL MVP
+
+This version replaces the old dependency-free prototype.
+Requires Node.js 22.9+ and Docker Desktop (or a PostgreSQL server).
+
+1. Extract the ZIP and open a terminal in the vibe96-app folder.
+2. Run: npm ci
+3. Copy .env.example to .env (do not overwrite an existing .env).
+4. Run: npm run db:local
+5. Run: npm run db:migrate
+6. Run: npm run db:seed
+7. Run: npm run dev
+8. Open http://localhost:3000
+
+Local demo accounts:
+buyer@vibe96.local
+builder@vibe96.local
+admin@vibe96.local
+Password: the SEED_PASSWORD in your local .env (example: Vibe96-demo-2026!).
+Do not use demo credentials publicly.
+
+Payments require your Stripe TEST keys and webhook listener.
+AI, automatic deployment and expert booking are not connected.
+See README.md for setup, tests, storage and integration instructions.
+
+Optional browser checks (keep the seeded app running):
+npx playwright install chromium
+npm run test:browser
+
+Seller signup keeps the builder role selected. Admin review is tied to
+an exact project revision; refresh after a builder changes the submission.
