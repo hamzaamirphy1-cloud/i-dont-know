@@ -127,3 +127,7 @@ This is a single-instance local MVP, not a hardened public marketplace. Before p
 - `scripts/schema.sql`: idempotent PostgreSQL schema; `scripts/seed.ts`: local sample data.
 - `tests/*.test.ts`: isolated database integration tests for permissions, reviews, delivery, checkout, refunds and public profile privacy.
 - `tests/browser/marketplace.spec.ts`: public-only Chromium workflow checks.
+
+## Vercel live demo
+
+See [VERCEL.md](./VERCEL.md) for importing this repository, connecting managed PostgreSQL and **private** Vercel Blob, setting private seed credentials, and obtaining your actual deployed domain. `vercel.json` runs `npm run hosted:prepare` before the build; database changes require `PREPARE_DATABASE_ON_BUILD=true`. The app derives HTTPS origins and Secure cookies on Vercel and never falls back to its ephemeral filesystem for source archives. Hosted uploads are limited to 4 MiB; local uploads remain 10 MiB. Without Blob, private source upload/download and checkout are explicitly unavailable.

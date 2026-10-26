@@ -333,6 +333,8 @@ export default function Marketplace() {
       payments: false,
       ai: false,
       deployment: false,
+      sourceStorage: true,
+      maxUploadBytes: 10 * 1024 * 1024,
     }),
     [loading, setLoading] = useState(true),
     [loadError, setLoadError] = useState(""),
@@ -561,11 +563,11 @@ export default function Marketplace() {
       )}
     </>
   );
-  const submitButton = (label: string) => (
+  const submitButton = (label: string, unavailable = false) => (
     <button
       type="submit"
       className="primary flex items-center justify-center gap-2"
-      disabled={busy}
+      disabled={busy || unavailable}
     >
       {busy ? <LoaderCircle className="animate-spin" size={16} /> : null}
       {label}
@@ -1197,7 +1199,9 @@ export default function Marketplace() {
                             ? t("Payment pending", "পেমেন্ট বাকি")
                             : statusLabel(o.status)}
                         </span>
-                        {o.status === "paid" && o.download_available ? (
+                        {o.status === "paid" &&
+                        o.download_available &&
+                        config.sourceStorage ? (
                           <a
                             className="outline-button"
                             href={`/api/downloads/${o.id}`}
@@ -1878,6 +1882,7 @@ export default function Marketplace() {
                   disabled={
                     busy ||
                     !config.payments ||
+                    !config.sourceStorage ||
                     !dialog.product.download_available ||
                     (!!user && user.role !== "buyer")
                   }
@@ -1903,12 +1908,12 @@ export default function Marketplace() {
                 <br />
                 <span
                   className={
-                    dialog.product.download_available
+                    dialog.product.download_available && config.sourceStorage
                       ? "connected-dot"
                       : "offline-dot"
                   }
                 />
-                {dialog.product.download_available
+                {dialog.product.download_available && config.sourceStorage
                   ? t(
                       "Source archive attached. Unlocked after verified payment.",
                       "সোর্স সংযুক্ত। যাচাইকৃত পেমেন্টের পর খুলবে।",
@@ -2118,8 +2123,8 @@ export default function Marketplace() {
               <p>
                 {dialog.product.name} ·{" "}
                 {t(
-                  "ZIP archive, up to 10 MB. Never include .env files, tokens, private customer records or other secrets.",
-                  "সর্বোচ্চ ১০ MB ZIP। .env, টোকেন, গ্রাহকের তথ্য বা গোপন তথ্য দেবেন না।",
+                  `ZIP archive, up to ${config.maxUploadBytes / 1024 / 1024} MiB. Never include .env files, tokens, private customer records or other secrets.`,
+                  `সর্বোচ্চ ${config.maxUploadBytes / 1024 / 1024} MiB ZIP। .env, টোকেন, গ্রাহকের তথ্য বা গোপন তথ্য দেবেন না।`,
                 )}
               </p>
               <div className="notice">
@@ -2128,6 +2133,14 @@ export default function Marketplace() {
                   "বায়ারের ডাউনলোডের জন্য নিশ্চিত পেমেন্ট প্রয়োজন। মালিক ও অ্যাডমিন জমা দেওয়া সোর্স দেখতে পারেন। সোর্স বদলালে নতুন রিভিউ প্রয়োজন।",
                 )}
               </div>
+              {!config.sourceStorage && (
+                <div className="notice" role="status">
+                  {t(
+                    "Private source storage: Not connected. Connect a private Vercel Blob store to enable uploads and downloads.",
+                    "ব্যক্তিগত সোর্স স্টোরেজ: সংযুক্ত নয়। আপলোড ও ডাউনলোড চালু করতে private Vercel Blob সংযোগ দিন।",
+                  )}
+                </div>
+              )}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -2153,13 +2166,17 @@ export default function Marketplace() {
                   {t("Choose source ZIP", "সোর্স ZIP বেছে নিন")}
                   <input
                     name="archive"
+                    disabled={!config.sourceStorage}
                     type="file"
                     accept=".zip,application/zip"
                     required
                   />
                 </label>
                 {formError}
-                {submitButton(t("Upload archive", "আর্কাইভ আপলোড করুন"))}
+                {submitButton(
+                  t("Upload archive", "আর্কাইভ আপলোড করুন"),
+                  !config.sourceStorage,
+                )}
               </form>
             </>
           ) : dialog.kind === "review" ? (
@@ -2175,7 +2192,7 @@ export default function Marketplace() {
                 )}
               </p>
               <div className="notice">
-                {dialog.product.download_available
+                {dialog.product.download_available && config.sourceStorage
                   ? t(
                       "Source archive attached. Review the repository before approval.",
                       "সোর্স সংযুক্ত আছে। অনুমোদনের আগে রিপোজিটরি যাচাই করুন।",

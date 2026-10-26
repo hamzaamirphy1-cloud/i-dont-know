@@ -595,6 +595,38 @@ test("marketplace security and purchase lifecycle", async (t) => {
     },
   );
   await t.test(
+    "hosted storage fails closed without Blob credentials",
+    async () => {
+      const previous = {
+        VERCEL: process.env.VERCEL,
+        APP_URL: process.env.APP_URL,
+        BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
+      };
+      try {
+        process.env.VERCEL = "1";
+        process.env.APP_URL = "https://vibe96-test.vercel.app";
+        delete process.env.BLOB_READ_WRITE_TOKEN;
+        const config = await (await request("config")).json();
+        assert.equal(config.sourceStorage, false);
+        assert.equal(config.maxUploadBytes, 4 * 1024 * 1024);
+        const upload = await request(
+          "products/" + productId + "/artifact",
+          "POST",
+          {},
+          builderCookie,
+          { origin: "https://vibe96-test.vercel.app" },
+        );
+        assert.equal(upload.status, 503);
+        assert.match((await upload.json()).error, /storage is not connected/);
+      } finally {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    },
+  );
+  await t.test(
     "checkout is buyer-only, rejects forged totals and clearly fails without Stripe configuration",
     async () => {
       assert.equal(

@@ -1,9 +1,13 @@
 import { randomUUID, createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
 import { unzipSync } from "fflate";
 import { query, transaction } from "./db";
+import {
+  sourceStorageConfigured,
+  artifactUploadLimit,
+  saveArtifact,
+  readArtifact,
+} from "./artifacts";
 import {
   currentUser,
   requireUser,
@@ -219,15 +223,16 @@ function validateSourceZip(buffer: Buffer) {
   }
 }
 const publicColumns = `p.id,p.name,p.description,p.category,p.technology,p.features,p.screenshots,p.price_cents,p.license,p.status,p.audit_status,p.audit_findings,p.review_note,p.reviewed_at,p.sample,p.accent,p.created_at,p.repository,p.seller_id,p.revision,(p.artifact_key IS NOT NULL) AS download_available,u.name AS seller_name`;
-const artifactDir = () =>
-  path.resolve(
-    /*turbopackIgnore: true*/ process.env.ARTIFACT_DIR || "./data/artifacts",
-  );
 async function archiveResponse(
   key: string | null,
   hash: string | null,
   filename: string,
 ) {
+  if (!sourceStorageConfigured())
+    throw new HttpError(
+      503,
+      "Private source storage is not connected. Connect a private Vercel Blob store.",
+    );
   if (!key)
     throw new HttpError(
       503,
@@ -237,12 +242,7 @@ async function archiveResponse(
     throw new HttpError(500, "Invalid archive reference.");
   let data;
   try {
-    data = await readFile(
-      /*turbopackIgnore: true*/ path.join(
-        /*turbopackIgnore: true*/ artifactDir(),
-        key,
-      ),
-    );
+    data = await readArtifact(key);
   } catch {
     throw new HttpError(
       503,
@@ -254,7 +254,7 @@ async function archiveResponse(
       503,
       "Archive integrity check failed. Contact support.",
     );
-  return new Response(data, {
+  return new Response(new Uint8Array(data), {
     headers: {
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="${filename}"`,
@@ -294,6 +294,8 @@ export async function handle(req: Request) {
         ai: false,
         deployment: false,
         expertBooking: false,
+        sourceStorage: sourceStorageConfigured(),
+        maxUploadBytes: artifactUploadLimit(),
       });
     if (route === "auth/me" && method === "GET")
       return json({ user: await currentUser(req) });
@@ -504,24 +506,38 @@ export async function handle(req: Request) {
           403,
           "Only the project owner or an admin may upload source.",
         );
-      const max = 10 * 1024 * 1024;
+      if (!sourceStorageConfigured())
+        throw new HttpError(
+          503,
+          "Private source storage is not connected. Connect a private Vercel Blob store.",
+        );
+      const max = artifactUploadLimit();
       if (Number(req.headers.get("content-length") || 0) > max + 100000)
-        throw new HttpError(413, "ZIP archives must be 10 MB or smaller.");
+        throw new HttpError(
+          413,
+          `ZIP archives must be ${max / 1024 / 1024} MiB or smaller.`,
+        );
       const raw = await limitedBody(req, max + 100000);
       const form = await new Response(raw, {
         headers: { "Content-Type": req.headers.get("content-type") || "" },
       }).formData();
       const file = form.get("archive");
       if (!(file instanceof File) || file.size > max || file.size < 4)
-        throw new HttpError(400, "Choose a ZIP file smaller than 10 MB.");
+        throw new HttpError(
+          400,
+          `Choose a ZIP file no larger than ${max / 1024 / 1024} MiB.`,
+        );
       const buffer = Buffer.from(await file.arrayBuffer());
       validateSourceZip(buffer);
       const key = randomUUID() + ".zip";
-      await mkdir(artifactDir(), { recursive: true });
-      await writeFile(path.join(artifactDir(), key), buffer, {
-        flag: "wx",
-        mode: 0o600,
-      });
+      try {
+        await saveArtifact(key, buffer);
+      } catch {
+        throw new HttpError(
+          503,
+          "Unable to save the private source archive. Check storage configuration and try again.",
+        );
+      }
       await query(
         `UPDATE products SET artifact_key=$1,artifact_sha256=$2,artifact_name='source.zip',status='pending',audit_status='not_reviewed',audit_findings='',review_note='',reviewed_by=NULL,reviewed_at=NULL,updated_at=now(),revision=revision+1 WHERE id=$3`,
         [key, createHash("sha256").update(buffer).digest("hex"), id],
@@ -569,6 +585,11 @@ export async function handle(req: Request) {
     }
     if (route === "checkout" && method === "POST") {
       const user = await requireUser(req, ["buyer"]);
+      if (!sourceStorageConfigured())
+        throw new HttpError(
+          503,
+          "Private source storage is not connected. Purchases are unavailable until storage is connected.",
+        );
       const b = z
         .object({ product_id: z.uuid() })
         .strict()

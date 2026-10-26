@@ -8,7 +8,7 @@ export function pool() {
   if (!globalDb.vibePool)
     globalDb.vibePool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
-      max: 10,
+      max: process.env.VERCEL === "1" ? 3 : 10,
       connectionTimeoutMillis: 5000,
     });
   return globalDb.vibePool;

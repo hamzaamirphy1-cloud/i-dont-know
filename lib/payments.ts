@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { randomUUID } from "node:crypto";
 import { query, transaction } from "./db";
+import { applicationOrigin } from "./hosted";
 import { HttpError, type User } from "./auth";
 
 // This narrow SDK boundary lets integration tests exercise real PostgreSQL writes
@@ -34,11 +35,15 @@ export function stripeClient() {
   return new Stripe(key);
 }
 export function paymentConnected() {
-  return !!(
-    process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_") &&
-    process.env.STRIPE_WEBHOOK_SECRET &&
-    process.env.APP_URL
-  );
+  try {
+    return !!(
+      process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_") &&
+      process.env.STRIPE_WEBHOOK_SECRET &&
+      applicationOrigin()
+    );
+  } catch {
+    return false;
+  }
 }
 export async function checkout(
   user: User,
@@ -109,8 +114,8 @@ export async function checkout(
             quantity: 1,
           },
         ],
-        success_url: `${process.env.APP_URL}/?checkout=returned`,
-        cancel_url: `${process.env.APP_URL}/?checkout=cancelled`,
+        success_url: `${applicationOrigin()}/?checkout=returned`,
+        cancel_url: `${applicationOrigin()}/?checkout=cancelled`,
       },
       { idempotencyKey: `checkout-${id}` },
     );

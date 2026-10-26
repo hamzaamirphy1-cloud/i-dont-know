@@ -1,6 +1,7 @@
 import { scrypt, randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { query } from "./db";
+import { applicationOrigin, secureSessionCookie } from "./hosted";
 const scryptAsync = promisify(scrypt);
 export type User = {
   id: string;
@@ -33,7 +34,7 @@ export const tokenHash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 export const cookieName = "vibe96_session";
 export function sessionCookie(token: string, maxAge = 604800) {
-  return `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${process.env.COOKIE_SECURE === "true" ? "; Secure" : ""}`;
+  return `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secureSessionCookie() ? "; Secure" : ""}`;
 }
 export async function createSession(userId: string) {
   const token = randomBytes(32).toString("hex");
@@ -71,9 +72,14 @@ export async function requireUser(req: Request, roles?: User["role"][]) {
   return user;
 }
 export function guardOrigin(req: Request) {
-  const configured = process.env.APP_URL;
+  let configured: string | undefined;
+  try {
+    configured = applicationOrigin();
+  } catch {
+    throw new HttpError(503, "The application origin is misconfigured.");
+  }
   if (!configured) throw new HttpError(503, "APP_URL is not configured.");
-  if (req.headers.get("origin") !== new URL(configured).origin)
+  if (req.headers.get("origin") !== configured)
     throw new HttpError(403, "Request origin is not allowed.");
 }
 export async function limitAuth(email: string) {
